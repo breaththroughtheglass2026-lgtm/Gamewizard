@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CANVAS | AI Agent</title>
+    <title>CanvasArtist</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -95,34 +95,40 @@
                 }
             };
 
-            const fetchFromSource = async (source, prompt) => {
-                return new Promise(resolve => {
-                    setTimeout(() => {
-                        resolve(`${source.name} says: \"${prompt}\"`);
-                    }, Math.random() * 1000 + 500);
-                });
-            };
-
             const handleAgentResponse = async (prompt) => {
                 setLoadingResp(true);
-                const sources = [
-                    { name: 'GPT-4', url: '/api/gpt4' },
-                    { name: 'LocalModel', url: '/api/local' },
-                    { name: 'GameDB', url: '/api/gamedb' },
-                ];
+                try {
+                    // Call backend API
+                    const response = await fetch('/api/generate-game', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ prompt }),
+                    });
 
-                const responses = await Promise.all(
-                    sources.map(src => fetchFromSource(src, prompt))
-                );
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `API Error: ${response.status}`);
+                    }
 
-                const combined = responses.join(' \n---\n ');
-                setMessages(prev => [...prev, { role: 'assistant', content: combined }]);
-                
-                // Generate game code based on prompt
-                const gameCode = generateGameCode(prompt);
-                setCurrentGameCode(gameCode);
-                
-                setLoadingResp(false);
+                    const data = await response.json();
+                    const aiResponse = data.response || 'No response from API';
+                    
+                    setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+                    
+                    // Generate game code based on prompt
+                    const gameCode = generateGameCode(prompt);
+                    setCurrentGameCode(gameCode);
+                } catch (error) {
+                    console.error('Error:', error);
+                    setMessages(prev => [...prev, { 
+                        role: 'assistant', 
+                        content: `⚠️ Error: ${error.message}\n\nMake sure:\n1. Backend server is running (npm start)\n2. .env.local file has your GROQ_API_KEY\n3. Check /api/test-key endpoint` 
+                    }]);
+                } finally {
+                    setLoadingResp(false);
+                }
             };
 
             const generateGameCode = (prompt) => {
