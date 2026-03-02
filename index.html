@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CANVAS | AI Agent</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body { margin: 0; background: #050508; color: white; font-family: sans-serif; overflow: hidden; }
+        #root { height: 100vh; display: flex; flex-direction: column; }
+
+        /* chat UI */
+        .chat-container { display: flex; flex-direction: column; height: 100vh; padding: 20px; }
+        .messages { flex: 1; overflow-y: auto; margin-bottom: 20px; }
+        .input-area { display: flex; gap: 10px; }
+        .input-area input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #000; color: #fff; }
+        .input-area button { padding: 10px 20px; background: #ff6b35; color: #fff; border: none; border-radius: 8px; }
+        .input-area button[disabled] { opacity: 0.6; cursor: not-allowed; }
+        .input-area button + button { margin-left: 5px; }
+        .spinner { border: 4px solid #333; border-top: 4px solid #ff6b35; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-left: 8px; }
+        @keyframes spin { 0% { transform: rotate(0deg);} 100%{transform:rotate(360deg);} }
+
+        /* export modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: #1a1a1a; padding: 30px; border-radius: 12px; max-width: 500px; max-height: 80vh; overflow-y: auto; border: 2px solid #ff6b35; }
+        .modal-content h3 { color: #ff6b35; margin-top: 0; }
+        .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
+        .export-btn { padding: 15px; background: #222; border: 1px solid #ff6b35; color: #fff; border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s; }
+        .export-btn:hover { background: #ff6b35; color: #000; transform: scale(1.05); }
+        .export-btn.full { grid-column: 1 / -1; }
+        .close-modal { float: right; font-size: 28px; cursor: pointer; color: #ff6b35; }
+
+        /* responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            .chat-container { padding: 10px; }
+            .input-area { flex-direction: column; }
+            .input-area input, .input-area button { width: 100%; }
+            .input-area button { margin-top: 10px; }
+            h2 { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function CANVASAgent() {
+            const [input, setInput] = useState("");
+            const [messages, setMessages] = useState([
+                { role: 'assistant', content: 'CANVAS initialized. I am ready to build your mobile game empire. What are we painting today?' }
+            ]);
+            const [images, setImages] = useState([]);
+            const [loadingResp, setLoadingResp] = useState(false);
+            const [loadingArt, setLoadingArt] = useState(false);
+            const [showExportModal, setShowExportModal] = useState(false);
+            const [currentGameCode, setCurrentGameCode] = useState("");
+            const messagesRef = useRef(null);
+
+            // scroll to bottom when messages change
+            useEffect(() => {
+                if (messagesRef.current) {
+                    messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+                }
+            }, [messages]);
+
+            const sendMessage = () => {
+                if (input.trim() && !loadingResp) {
+                    setMessages([...messages, { role: 'user', content: input }]);
+                    const query = input;
+                    setInput("");
+                    handleAgentResponse(query);
+                }
+            };
+
+            const generateArt = async (prompt) => {
+                if (loadingArt) return;
+                setLoadingArt(true);
+                try {
+                    const url = await new Promise(resolve => {
+                        setTimeout(() => {
+                            resolve(`https://via.placeholder.com/300?text=${encodeURIComponent(prompt)}`);
+                        }, 800);
+                    });
+                    return url;
+                } finally {
+                    setLoadingArt(false);
+                }
+            };
+
+            const fetchFromSource = async (source, prompt) => {
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        resolve(`${source.name} says: \"${prompt}\"`);
+                    }, Math.random() * 1000 + 500);
+                });
+            };
+
+            const handleAgentResponse = async (prompt) => {
+                setLoadingResp(true);
+                const sources = [
+                    { name: 'GPT-4', url: '/api/gpt4' },
+                    { name: 'LocalModel', url: '/api/local' },
+                    { name: 'GameDB', url: '/api/gamedb' },
+                ];
+
+                const responses = await Promise.all(
+                    sources.map(src => fetchFromSource(src, prompt))
+                );
+
+                const combined = responses.join(' \n---\n ');
+                setMessages(prev => [...prev, { role: 'assistant', content: combined }]);
+                
+                // Generate game code based on prompt
+                const gameCode = generateGameCode(prompt);
+                setCurrentGameCode(gameCode);
+                
+                setLoadingResp(false);
+            };
+
+            const generateGameCode = (prompt) => {
+                return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game: ${prompt.substring(0, 30)}</title>
+    <style>
+        body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: Arial, sans-serif; }
+        #gameCanvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">Game: ${prompt.substring(0, 30)}...</div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let playerX = canvas.width / 2;
+        let playerY = canvas.height / 2;
+        const playerSize = 20;
+        let vx = 0, vy = 0;
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') vy = -5;
+            if (e.key === 'ArrowDown') vy = 5;
+            if (e.key === 'ArrowLeft') vx = -5;
+            if (e.key === 'ArrowRight') vx = 5;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') vy = 0;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') vx = 0;
+        });
+
+        function gameLoop() {
+            ctx.fillStyle = '#050508';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            playerX += vx;
+            playerY += vy;
+
+            if (playerX < playerSize) playerX = playerSize;
+            if (playerX > canvas.width - playerSize) playerX = canvas.width - playerSize;
+            if (playerY < playerSize) playerY = playerSize;
+            if (playerY > canvas.height - playerSize) playerY = canvas.height - playerSize;
+
+            ctx.fillStyle = '#ff6b35';
+            ctx.fillRect(playerX - playerSize/2, playerY - playerSize/2, playerSize, playerSize);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>`;
+            };
+
+            const exportPDF = () => {
+                const element = document.createElement('div');
+                element.innerHTML = `
+                    <div style="padding: 20px; background: #f5f5f5; color: #000;">
+                        <h1>CANVAS Game Session</h1>
+                        <h2>Date: ${new Date().toLocaleString()}</h2>
+                        <h3>Conversation:</h3>
+                        ${messages.map(m => `<p><strong>${m.role === 'user' ? 'You' : 'CANVAS'}:</strong> ${m.content}</p>`).join('')}
+                        ${images.length > 0 ? `<h3>Artwork:</h3>${images.map(img => `<img src="${img}" style="max-width: 100%; margin: 10px 0;" />`).join('')}` : ''}
+                    </div>
+                `;
+                
+                const opt = {
+                    margin: 10,
+                    filename: `canvas-game-${Date.now()}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
+                };
+                
+                html2pdf().set(opt).from(element).save();
+            };
+
+            const exportHTML = () => {
+                const dataStr = currentGameCode || generateGameCode(input || "CANVAS Game");
+                const dataUri = 'data:text/html;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const exportFileDefaultName = `canvas-game-${Date.now()}.html`;
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            };
+
+            const exportCode = (format) => {
+                let code = currentGameCode || generateGameCode(input || "CANVAS Game");
+                let filename = `canvas-game-${Date.now()}`;
+
+                if (format === 'unreal') {
+                    code = generateUnrealCode();
+                    filename += '.cpp';
+                } else if (format === 'meta') {
+                    code = generateMetaQuestCode();
+                    filename += '.js';
+                } else if (format === 'javascript') {
+                    filename += '.js';
+                } else if (format === 'python') {
+                    code = generatePythonCode();
+                    filename += '.py';
+                }
+
+                const blob = new Blob([code], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+            };
+
+            const generateUnrealCode = () => {
+                return `// Generated by CANVAS AI Agent
+// Paste this in your Unreal Engine 5 project
+// File: Source/YourProject/GameCharacter.cpp
+
+#include "GameCharacter.h"
+#include "InputActionValue.h"
+
+AGameCharacter::AGameCharacter()
+{
+    PrimaryActorTick.TickInterval = 0.0f;
+    PrimaryActorTick.TickType = ETickingGroup::TG_PrePhysics;
+    
+    // Don't rotate character with camera
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationYaw = false;
+    bUseControllerRotationRoll = false;
+
+    // Configure character movement
+    GetCharacterMovement()->bOrientRotationToMovement = true;
+    GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
+    GetCharacterMovement()->MaxWalkSpeed = 500.0f;
+    GetCharacterMovement()->MinAnalogWalkSpeed = 20.0f;
+    GetCharacterMovement()->MaxWalkSpeedCrouched = 300.0f;
+}
+
+void AGameCharacter::SetupPlayerInputComponent(class UEnhancedInputComponent* PlayerInputComponent)
+{
+    Super::SetupPlayerInputComponent(PlayerInputComponent);
+    
+    if (UEnhancedInputComponent* EnhancedInputComponent = 
+        Cast<UEnhancedInputComponent>(PlayerInputComponent))
+    {
+        // Moving
+        EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AGameCharacter::Move);
+        // Looking
+        EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACharacter::AddControllerYawInput);
+    }
+}
+
+void AGameCharacter::Move(const FInputActionValue& Value)
+{
+    if (Controller != nullptr)
+    {
+        const FVector2D MovementVector = Value.Get<FVector2D>();
+        
+        if (MovementVector.X != 0.0f)
+        {
+            AddMovementInput(GetActorForwardVector(), MovementVector.X);
+        }
+        if (MovementVector.Y != 0.0f)
+        {
+            AddMovementInput(GetActorRightVector(), MovementVector.Y);
+        }
+    }
+}`;
+            };
+
+            const generateMetaQuestCode = () => {
+                return `// Generated by CANVAS AI Agent
+// Meta Quest Game Template - WebXR
+
+navigator.xr?.isSessionSupported('immersive-vr').then(supported => {
+    if (supported) {
+        document.getElementById('enter-xr').addEventListener('click', async () => {
+            const session = await navigator.xr.requestSession('immersive-vr');
+            
+            const canvas = document.createElement('canvas');
+            const glContext = canvas.getContext('webgl', { xrCompatible: true });
+            const layer = new XRWebGLLayer(session, glContext);
+            await session.updateRenderState({ baseLayer: layer });
+            
+            const referenceSpace = await session.requestReferenceSpace('local');
+            
+            function onXRFrame(time, frame) {
+                session.requestAnimationFrame(onXRFrame);
+                const pose = frame.getViewerPose(referenceSpace);
+                
+                glContext.bindFramebuffer(glContext.FRAMEBUFFER, layer.framebuffer);
+                glContext.clearColor(0.0, 0.0, 0.0, 1.0);
+                glContext.clear(glContext.COLOR_BUFFER_BIT | glContext.DEPTH_BUFFER_BIT);
+                
+                if (pose) {
+                    for (const view of pose.views) {
+                        const viewport = layer.getViewport(view);
+                        glContext.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+                        // Render your game here
+                    }
+                }
+            }
+            
+            session.requestAnimationFrame(onXRFrame);
+        });
+    }
+});`;
+            };
+
+            const generatePythonCode = () => {
+                return `# Generated by CANVAS AI Agent
+# Pygame Template
+
+import pygame
+import sys
+
+pygame.init()
+
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("CANVAS Game")
+clock = pygame.time.Clock()
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.Surface((20, 20))
+        self.image.fill((255, 107, 53))
+        self.rect = self.image.get_rect()
+        self.rect.center = (WIDTH // 2, HEIGHT // 2)
+        self.velocity = [0, 0]
+    
+    def update(self):
+        self.rect.x += self.velocity[0]
+        self.rect.y += self.velocity[1]
+        
+        if self.rect.left < 0:
+            self.rect.left = 0
+        if self.rect.right > WIDTH:
+            self.rect.right = WIDTH
+        if self.rect.top < 0:
+            self.rect.top = 0
+        if self.rect.bottom > HEIGHT:
+            self.rect.bottom = HEIGHT
+    
+    def draw(self, surface):
+        surface.blit(self.image, self.rect)
+
+player = Player()
+all_sprites = pygame.sprite.Group(player)
+
+running = True
+while running:
+    clock.tick(60)
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                player.velocity[1] = -5
+            elif event.key == pygame.K_DOWN:
+                player.velocity[1] = 5
+            elif event.key == pygame.K_LEFT:
+                player.velocity[0] = -5
+            elif event.key == pygame.K_RIGHT:
+                player.velocity[0] = 5
+    
+    all_sprites.update()
+    screen.fill((5, 5, 8))
+    player.draw(screen)
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()`;
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            };
+
+            return (
+                <div className="chat-container">
+                    <h2 style={{ color: '#ff6b35' }}>🚀 CANVAS PRIME - Universal Pocket Rocket</h2>
+                    <div className="messages" ref={messagesRef}>
+                        {messages.map((m, i) => (
+                            <div key={i} style={{ marginBottom: '10px', opacity: 0.9 }}>
+                                <strong>{m.role === 'user' ? 'You: ' : 'Agent: '}</strong> {m.content}
+                            </div>
+                        ))}
+                        {loadingResp && <div style={{opacity:0.7}}>Agent is thinking...</div>}
+                    </div>
+
+                    {images.length > 0 && (
+                        <div className="messages" style={{ padding: '10px', background: '#111' }}>
+                            <h3>Artwork</h3>
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                {images.map((url, idx) => (
+                                    <img key={idx} src={url} alt="generated" style={{ maxWidth: '100%', borderRadius: '8px' }} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="input-area">
+                        <input 
+                            value={input} 
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyPress={handleKeyPress}
+                            placeholder="Type a game idea..."
+                            disabled={loadingResp || loadingArt}
+                        />
+                        <button onClick={sendMessage} disabled={loadingResp || loadingArt}>Send</button>
+                        <button onClick={() => {
+                            if (input.trim()) {
+                                generateArt(input).then(url => {
+                                    if (url) setImages(prev => [...prev, url]);
+                                });
+                            }
+                        }} disabled={loadingArt || loadingResp}>{loadingArt ? 'Painting…' : 'Paint'}</button>
+                        <button onClick={() => setShowExportModal(true)} style={{background:'#ff6b35', color: '#000'}}>📥 Export</button>
+                        <button onClick={() => {
+                            setMessages([{ role: 'assistant', content: 'CANVAS initialized. I am ready to build your mobile game empire. What are we painting today?' }]);
+                            setImages([]);
+                            setCurrentGameCode("");
+                        }} style={{background:'#444'}}>Clear</button>
+                    </div>
+
+                    {/* Export Modal */}
+                    <div className={`modal ${showExportModal ? 'show' : ''}`} onClick={() => setShowExportModal(false)}>
+                        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                            <span className="close-modal" onClick={() => setShowExportModal(false)}>&times;</span>
+                            <h3>🚀 Universal Export</h3>
+                            <p>Choose your export format:</p>
+                            
+                            <div className="export-grid">
+                                <div className="export-btn" onClick={exportPDF}>
+                                    📄 PDF Session
+                                </div>
+                                <div className="export-btn" onClick={exportHTML}>
+                                    🎮 HTML Game
+                                </div>
+                                <div className="export-btn" onClick={() => exportCode('unreal')}>
+                                    🏗️ Unreal Engine
+                                </div>
+                                <div className="export-btn" onClick={() => exportCode('meta')}>
+                                    🥽 Meta Quest
+                                </div>
+                                <div className="export-btn" onClick={() => exportCode('python')}>
+                                    🐍 Python Game
+                                </div>
+                                <div className="export-btn" onClick={() => exportCode('javascript')}>
+                                    ⚡ JavaScript
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CANVASAgent />);
+    </script>
+</body>
+</html>
